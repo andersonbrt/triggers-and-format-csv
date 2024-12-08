@@ -1,13 +1,27 @@
 body {
     background-color: #f8f9fa;
+    /* Cor clara para o fundo */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    margin: 0;
 }
 
 .container {
-    max-width: 800px;
-}
 
-footer {
-    position: fixed;
-    bottom: 0;
+    background-color: #ffffff;
+    /* Fundo branco para o container */
+    border-radius: 8px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    /* Sombra leve */
+    padding: 20px;
+    max-width: 350px;
     width: 100%;
+}
+.dashboard {
+    max-width: 800px!important;
+}
+.btn {
+    margin-top: 10px;
 }

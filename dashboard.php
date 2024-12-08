@@ -12,12 +12,18 @@ if (!isset($_SESSION['user'])) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard</title>
+    <!-- CSS do Bootstrap -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <!-- jQuery (deve vir antes do JavaScript do Bootstrap) -->
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <!-- JS do Bootstrap -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <link rel="stylesheet" href="assets/css/style.css">
 </head>
 
+
 <body>
-    <div class="container mt-5">
+    <div class="container mt-5 dashboard">
 
         <h2>Bem-vindo, <?php echo $_SESSION['user']; ?>
             <!-- Botão de Logout -->
@@ -53,12 +59,29 @@ if (!isset($_SESSION['user'])) {
             </div>
         </div>
         <hr>
-
+        <!-- Modais -->
+        <div class="modal fade" id="responseModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="responseModalTitle">Mensagem</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <p id="responseModalMessage"></p>
+                        <a id="downloadButton" class="btn btn-success" style="display: none;" href="#" download>Baixar Arquivo</a>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">OK</button>
+                    </div>
+                </div>
+            </div>
+        </div>
         <!-- Área para exibir mensagem e botão de download -->
-        <div id="responseMessageDownload" style="display: none;">
+        <!-- <div id="responseMessageDownload" style="display: none;">
             <p id="messageTextDownload"></p>
             <a id="downloadButton" class="btn btn-success" style="display: none;" href="#" download>Baixar Arquivo</a>
-        </div>
+        </div> -->
 
         <!-- Área para exibir mensagem e botão de webhook -->
         <div id="responseMessageWebhook" style="display: none;">
@@ -77,6 +100,31 @@ if (!isset($_SESSION['user'])) {
     </div>
 
     <script>
+        // Função para exibir o modal com uma mensagem e opcionalmente um botão de download
+        function showModal(title, message, downloadUrl = null) {
+            $('#responseModalTitle').text(title);
+            $('#responseModalMessage').text(message);
+
+            if (downloadUrl) {
+                // Adiciona o botão de download ao modal se houver uma URL
+                $('#responseModalDownload').show();
+                $('#downloadButton').attr('href', downloadUrl);
+                $('#downloadButton').show();
+            } else {
+                // Esconde o botão de download se não houver uma URL
+                $('#responseModalDownload').hide();
+                $('#downloadButton').hide();
+            }
+
+            var modal = new bootstrap.Modal(document.getElementById('responseModal'));
+            modal.show();
+
+            // Recarregar a página ao fechar o modal clicando fora ou no botão de fechamento
+            $('#responseModal').on('hidden.bs.modal', function() {
+                atualizarPagina();
+            });
+        }
+
         $('#uploadForm').on('submit', function(e) {
             e.preventDefault(); // Impede o envio padrão do formulário
             $('.btn-send').text('Enviando...');
@@ -139,22 +187,17 @@ if (!isset($_SESSION['user'])) {
                 data: formData,
                 contentType: false,
                 processData: false,
-                success: function(response) {
 
-                    // Converter resposta para JSON
+                success: function(response) {
                     var data = JSON.parse(response);
 
-                    // Verifica se existe url para download
                     if (data.file_url) {
 
                         // Verifica se action é velip ou botconversa
                         if (formData.get('action') === 'botconversa' || formData.get('action') === 'velip') {
 
-                            // Exibe a mensagem e o botão para download
-                            $('#responseMessageDownload').show(); // Exibe a área de resposta
-                            $('#messageTextDownload').text(data.message); // Exibe a mensagem do servidor
-                            $('#downloadButton').show(); // Exibe o botão de download
-                            $('#downloadButton').attr('href', data.file_url); // Define o link para o arquivo
+                            // Exibe o modal com o botão de download dentro
+                            showModal('Sucesso', data.message, data.file_url);
                         } else {
 
                             // Exibe a mensagem e o botão para webhook
@@ -164,8 +207,13 @@ if (!isset($_SESSION['user'])) {
                             $('#webhookButton').show(); // Exibe o botão de webhook
                         }
                     } else {
-                        $('#downloadButton').hide(); // Esconde o botão de download caso não haja arquivo
+                        // Exibe o modal sem botão de download em caso de erro
+                        showModal('Erro', 'Ocorreu um problema ao processar o arquivo.');
                     }
+                },
+                error: function() {
+                    // Exibe o modal em caso de erro na requisição
+                    showModal('Erro', 'Não foi possível processar a solicitação.');
                 }
             });
         }
@@ -175,7 +223,7 @@ if (!isset($_SESSION['user'])) {
             location.reload();
         }
 
-        // Função para enviar dados para webhook
+        /// Função para enviar dados para webhook
         function enviarParaWebhook() {
             // Exibe a barra de progresso
             $('#progress-container').show();
@@ -183,7 +231,7 @@ if (!isset($_SESSION['user'])) {
             $('#progress').css('width', '0%');
             $('#progress').text('0%');
 
-            // Defini accountId
+            // Define o accountId selecionado
             var accountId = $('#accountDropdown').val();
 
             var progress = 0;
@@ -208,16 +256,20 @@ if (!isset($_SESSION['user'])) {
                 },
                 success: function(response) {
                     var data = JSON.parse(response);
-                    $('#messageTextFormat').text(data.message);
                     clearInterval(interval); // Para o incremento de progresso
                     $('#progress').css('width', '100%');
                     $('#progress').text('100%');
+
+                    // Exibe o modal com a mensagem de sucesso
+                    showModal('Sucesso', data.message);
                 },
                 error: function() {
-                    $('#messageTextFormat').text('Erro ao enviar os dados!');
                     clearInterval(interval); // Para o incremento de progresso
                     $('#progress').css('width', '100%');
                     $('#progress').text('Erro');
+
+                    // Exibe o modal com a mensagem de erro
+                    showModal('Erro', 'Ocorreu um erro ao enviar os dados para o webhook!');
                 },
                 complete: function() {
                     // Opcional: esconder a barra de progresso após a execução
@@ -225,6 +277,7 @@ if (!isset($_SESSION['user'])) {
                         $('#progress-container').hide();
                         $('#webhookButton').hide();
                         $('#dropdown').hide();
+                        $('.btn-dark').hide();
                     }, 100); // Esconde após 100ms
                 }
             });

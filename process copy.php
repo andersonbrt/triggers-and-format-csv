@@ -1,4 +1,11 @@
 <?php
+// Gerar o arquivo CSV com codificação UTF-8
+header('Content-Type: text/csv; charset=UTF-8');
+header('Content-Disposition: attachment; filename="arquivo.csv"');
+header('Access-Control-Allow-Origin: *');
+header('Access-Control-Allow-Methods: POST, GET, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type');
+
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
@@ -18,35 +25,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $action = $_POST['action'];
 
         // Usa o caminho do arquivo carregado, não o arquivo fixo
-        $inputFile = 'data/input/upload_input.csv';
+        $inputFile = 'data/input/upload_input.csv'; // Agora o arquivo carregado é usado
 
-        // Caminho do arquivo de saída
+        // Caminha do arquivo de saida
         $outputFile = "data/output/output_{$action}.csv";
 
         if (file_exists($inputFile)) {
-
-            // Verifica e ajusta a codificação do arquivo para UTF-8
-            $fileContent = file_get_contents($inputFile);
-            if (!mb_detect_encoding($fileContent, 'UTF-8', true)) {
-                $fileContent = mb_convert_encoding($fileContent, 'UTF-8');
-                file_put_contents($inputFile, $fileContent);
-            }
-
-            // Detectar delimitador
-            $delimiter = detectDelimiter($inputFile);
-
-            // Verificar se o BOM já existe, caso contrário, adicioná-lo
-            $bom = "\xEF\xBB\xBF"; // BOM UTF-8
-            $originalContent = file_get_contents($inputFile);
-
-            if (substr($originalContent, 0, 3) !== $bom) {
-                // Prepend BOM no início do conteúdo do arquivo
-                $originalContent = $bom . $originalContent;
-                file_put_contents($inputFile, $originalContent);
-            }
-
-            // Ler o arquivo CSV com o delimitador identificado
-            $rows = array_map(fn($line) => str_getcsv($line, $delimiter), file($inputFile));
+            $rows = array_map('str_getcsv', file($inputFile));
             $header = array_shift($rows); // Remove e obtém o cabeçalho
             $data = array_map(fn($row) => array_combine($header, $row), $rows);
 
@@ -57,6 +42,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             // Escreve os dados no arquivo de saída
             $file = fopen($outputFile, 'w');
+
+            // Verifica action para formatar em UTF-8
+            if ($action !== 'send-botconversa') {
+
+                // Escrever a BOM (Byte Order Mark) UTF-8 para garantir a codificação correta no Excel
+                fwrite($file, "\xEF\xBB\xBF"); // BOM para UTF-8
+            }
 
             // Adicionar o cabeçalho ao arquivo CSV
             fputcsv($file, $header);
@@ -69,10 +61,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             fclose($file);
 
             // Retorna uma resposta JSON válida
-            echo json_encode([
-                'message' => "Arquivo processado para $action com sucesso!",
-                'file_url' => $outputFile // URL para download
-            ]);
+            echo json_encode(
+                [
+                    'message' => "Arquivo processado para $action com sucesso!",
+                    'file_url' => $outputFile // URL para download
+                ]
+            );
         } else {
             echo json_encode(['message' => 'Arquivo de entrada não encontrado!']);
         }
@@ -134,55 +128,4 @@ function formatarTelefone($telefone)
     }
 
     return $telefone;
-}
-
-// Função para detectar delimitador do CSV
-function detectDelimiter($filePath)
-{
-    $file = fopen($filePath, 'r');
-    $line = fgets($file);
-    fclose($file);
-
-    $delimiters = [',', ';', '\t', '|'];
-    $counts = [];
-
-    foreach ($delimiters as $delimiter) {
-        $counts[$delimiter] = substr_count($line, $delimiter);
-    }
-
-    return array_search(max($counts), $counts);
-}
-
-function detectCSVDelimiter($filePath)
-{
-    $file = fopen($filePath, 'r');
-
-    if (!$file) {
-        throw new Exception("Erro ao abrir o arquivo.");
-    }
-
-    // Delimitadores comuns
-    $delimiters = [",", ";", "\t", "|"];
-
-    $firstLine = fgets($file);
-    fclose($file);
-
-    if (!$firstLine) {
-        throw new Exception("O arquivo está vazio ou não pode ser lido.");
-    }
-
-    $maxCount = 0;
-    $detectedDelimiter = null;
-
-    // Testando cada delimitador
-    foreach ($delimiters as $delimiter) {
-        $count = count(explode($delimiter, $firstLine));
-
-        if ($count > $maxCount) {
-            $maxCount = $count;
-            $detectedDelimiter = $delimiter;
-        }
-    }
-
-    return $detectedDelimiter;
 }
