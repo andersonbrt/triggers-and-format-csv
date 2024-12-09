@@ -100,6 +100,17 @@ if (!isset($_SESSION['user'])) {
     </div>
 
     <script>
+        $(document).ready(function() {
+            // Sempre que houver uma mudança no campo de arquivo, exiba o botão de envio
+            $('#csvFile').on('change', function() {
+                $('.btn-send').text('Enviar');
+                $('.btn-send').show(); // Exibe o botão de envio
+                $('#actions').hide(); // Esconde a área de ações
+                $('#webhookButton').hide(); // Esconde botao de envio de webhook
+                //$('.btn-dark').removeClass('disabled');
+            });
+        });
+
         // Função para exibir o modal com uma mensagem e opcionalmente um botão de download
         function showModal(title, message, downloadUrl = null) {
             $('#responseModalTitle').text(title);
@@ -128,6 +139,7 @@ if (!isset($_SESSION['user'])) {
         $('#uploadForm').on('submit', function(e) {
             e.preventDefault(); // Impede o envio padrão do formulário
             $('.btn-send').text('Enviando...');
+            $('#webhookButton').show();
             var formData = new FormData(this);
 
             $.ajax({
@@ -148,9 +160,23 @@ if (!isset($_SESSION['user'])) {
         });
 
         function showDropdown() {
+            $(document).ready(function() {
+                // Sempre que houver uma mudança no campo de arquivo, exiba o botão de envio
+                $('#csvFile').on('change', function() {
+                    $('.btn-send').text('Enviar');
+                    $('.btn-send').show(); // Exibe o botão de envio
+                    $('#actions').hide(); // Esconde a área de ações
+                    $('#webhookButton').hide(); // Esconde botao de envio de webhook
+
+                });
+            });
+
+            // Desabilita o botão sem ação ao carregá-lo
+            $('.btn-dark').addClass('disabled');
             $('#responseMessageFormat').show();
             $('#messageTextFormat').text('Preparando dados...');
             $('#messageTextFormat').show();
+            $('#webhookButton').show(); // Esconde botao de envio de webhook
             formatCSV('send-botconversa');
         }
 
@@ -224,6 +250,64 @@ if (!isset($_SESSION['user'])) {
         }
 
         /// Função para enviar dados para webhook
+        // function enviarParaWebhook() {
+        //     // Exibe a barra de progresso
+        //     $('#progress-container').show();
+        //     $('#webhookButton').text('Enviando...');
+        //     $('#progress').css('width', '0%');
+        //     $('#progress').text('0%');
+
+        //     // Define o accountId selecionado
+        //     var accountId = $('#accountDropdown').val();
+
+        //     var progress = 0;
+        //     var interval = setInterval(function() {
+        //         if (progress < 85) {
+        //             progress += 1; // Aumenta a porcentagem em 1 a cada 500ms
+        //             $('#progress').css('width', progress + '%');
+        //             $('#progress').text(progress + '%');
+        //         }
+        //     }, 500); // Atualiza a cada 500ms
+
+        //     $.ajax({
+        //         url: 'webhook.php', // Envia para o webhook.php
+        //         type: 'POST',
+        //         data: {
+        //             accountId: accountId
+        //         },
+        //         beforeSend: function() {
+        //             // A barra começa com 0%
+        //             $('#progress').css('width', '0%');
+        //             $('#progress').text('0%');
+        //         },
+        //         success: function(response) {
+        //             var data = JSON.parse(response);
+        //             clearInterval(interval); // Para o incremento de progresso
+        //             $('#progress').css('width', '100%');
+        //             $('#progress').text('100%');
+
+        //             // Exibe o modal com a mensagem de sucesso
+        //             showModal('Sucesso', data.message);
+        //         },
+        //         error: function() {
+        //             clearInterval(interval); // Para o incremento de progresso
+        //             $('#progress').css('width', '100%');
+        //             $('#progress').text('Erro');
+
+        //             // Exibe o modal com a mensagem de erro
+        //             showModal('Erro', 'Ocorreu um erro ao enviar os dados para o webhook!');
+        //         },
+        //         complete: function() {
+        //             // Opcional: esconder a barra de progresso após a execução
+        //             setTimeout(function() {
+        //                 $('#progress-container').hide();
+        //                 $('#webhookButton').hide();
+        //                 $('#dropdown').hide();
+        //                 $('.btn-dark').hide();
+        //             }, 100); // Esconde após 100ms
+        //         }
+        //     });
+        // }
         function enviarParaWebhook() {
             // Exibe a barra de progresso
             $('#progress-container').show();
@@ -235,16 +319,35 @@ if (!isset($_SESSION['user'])) {
             var accountId = $('#accountDropdown').val();
 
             var progress = 0;
-            var interval = setInterval(function() {
-                if (progress < 100) {
-                    progress += 1; // Aumenta a porcentagem em 1 a cada 500ms
-                    $('#progress').css('width', progress + '%');
-                    $('#progress').text(progress + '%');
+            var interval;
+
+            function atualizarProgresso() {
+                if (progress < 25) {
+                    progress += 1;
+                    atualizarBarra(progress);
+                    setTimeout(atualizarProgresso, 500);
+                } else if (progress < 50) {
+                    progress += 1;
+                    atualizarBarra(progress);
+                    setTimeout(atualizarProgresso, 1000);
+                } else if (progress < 100) {
+                    progress += 1;
+                    atualizarBarra(progress);
+                    setTimeout(atualizarProgresso, 5000);
+                } else {
+                    clearTimeout(interval);
                 }
-            }, 500); // Atualiza a cada 500ms
+            }
+
+            function atualizarBarra(progress) {
+                $('#progress').css('width', progress + '%');
+                $('#progress').text(progress + '%');
+            }
+
+            atualizarProgresso();
 
             $.ajax({
-                url: 'webhook.php', // Envia para o webhook.php
+                url: 'webhook.php',
                 type: 'POST',
                 data: {
                     accountId: accountId
@@ -256,16 +359,15 @@ if (!isset($_SESSION['user'])) {
                 },
                 success: function(response) {
                     var data = JSON.parse(response);
-                    clearInterval(interval); // Para o incremento de progresso
-                    $('#progress').css('width', '100%');
-                    $('#progress').text('100%');
+                    progress = 100;
+                    atualizarBarra(progress);
 
                     // Exibe o modal com a mensagem de sucesso
                     showModal('Sucesso', data.message);
                 },
                 error: function() {
-                    clearInterval(interval); // Para o incremento de progresso
-                    $('#progress').css('width', '100%');
+                    progress = 100;
+                    atualizarBarra(progress);
                     $('#progress').text('Erro');
 
                     // Exibe o modal com a mensagem de erro

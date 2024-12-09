@@ -25,3 +25,8 @@ body {
 .btn {
     margin-top: 10px;
 }
+.btn-dark.disabled {
+    pointer-events: none; /* Impede cliques */
+    opacity: 0.6; /* Diminui a opacidade para indicar inatividade */
+    cursor: not-allowed; /* Indica visualmente que não é clicável */
+}
