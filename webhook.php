@@ -11,6 +11,14 @@ $dotenv->load();
 $app_url = $_ENV['APP_URL'];
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+
+    // Transformar o array de IDs em uma string JSON
+    $accountId = $_POST['accountId'];
+    $selectedIds = json_encode($_POST['selectedIds']); // Converte o array para JSON
+
+    // Montar a query string manualmente para o formato desejado
+    $queryString = "account_id={$accountId}&selectedIds={$selectedIds}";
+
     $filePath = 'data/output/output_send-botconversa.csv';
 
     if (file_exists($filePath)) {
@@ -59,7 +67,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
 
-        $accountId = $_POST['accountId'];
         switch ($accountId) {
             case 'conta0':
                 $accountName = "Conta Matriz";
@@ -77,7 +84,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $accountName = "Undefined";
         }
 
-        $webhookUrl = "{$app_url}?account_id={$accountId}";
+        $webhookUrl = "{$app_url}?{$queryString}";
         $ch = curl_init($webhookUrl);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_POST, true);

@@ -4,6 +4,48 @@ if (!isset($_SESSION['user'])) {
     header("Location: login.php");
     exit;
 }
+
+// Pastas a serem limpas
+$foldersToClean = [
+    'data/input',
+    'data/output'
+];
+
+// Deletar arquivos das pastas
+deleteFilesFromFolders($foldersToClean);
+
+function deleteFilesFromFolders(array $folders)
+{
+    foreach ($folders as $folder) {
+        if (!is_dir($folder)) {
+            continue;
+        }
+
+        // Listar todos os arquivos dentro da pasta (exceto '.' e '..')
+        $files = glob($folder . '/*'); // Use * para pegar todos os arquivos e subpastas
+
+        foreach ($files as $file) {
+            if (is_file($file)) {
+                // Deleta o arquivo
+                if (unlink($file)) {
+                }
+            } elseif (is_dir($file)) {
+                // Remove subpastas recursivamente
+                deleteFolder($file);
+            }
+        }
+    }
+}
+
+function deleteFolder($folder)
+{
+    $files = array_diff(scandir($folder), ['.', '..']);
+    foreach ($files as $file) {
+        $path = $folder . DIRECTORY_SEPARATOR . $file;
+        is_dir($path) ? deleteFolder($path) : unlink($path);
+    }
+    return rmdir($folder);
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -14,11 +56,18 @@ if (!isset($_SESSION['user'])) {
     <title>Dashboard</title>
     <!-- CSS do Bootstrap -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
-    <!-- jQuery (deve vir antes do JavaScript do Bootstrap) -->
+    <!-- jQuery deve ser carregado primeiro -->
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+
+    <!-- CSS do Select2 (versão 4.0.13) -->
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.0.13/dist/css/select2.min.css" rel="stylesheet">
+    <!-- JS do Select2 (versão 4.0.13) -->
+    <script src="https://cdn.jsdelivr.net/npm/select2@4.0.13/dist/js/select2.min.js"></script>
+
     <!-- JS do Bootstrap -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <link rel="stylesheet" href="assets/css/style.css">
+
 </head>
 
 
@@ -40,8 +89,8 @@ if (!isset($_SESSION['user'])) {
         </form>
         <hr>
         <div id="actions" style="display: none;">
-            <button class="btn btn-dark" onclick="showDropdown()">Enviar para Bot Conversa</button>
-            <button class="btn btn-info" onclick="formatCSV('botconversa')">Formatar para BotConversa</button>
+            <button class="btn btn-dark" onclick="showDropdown('send-botconversa')">Enviar para Bot Conversa</button>
+            <button class="btn btn-info" onclick="showDropdown('botconversa')">Formatar para BotConversa</button>
             <button class="btn btn-warning" onclick="formatCSV('velip')">Formatar para Velip</button>
 
             <!-- Área para exibir mensagem de preparação de formatação de dados -->
@@ -51,12 +100,20 @@ if (!isset($_SESSION['user'])) {
 
             <div id="dropdown" class="mt-2" style="display: none;">
                 <select id="accountDropdown" class="form-select">
+                    <option selected="selected" disabled>-</option>
                     <option value="conta0">Conta Matriz</option>
                     <option value="conta1">Conta 1</option>
                     <option value="conta2">Conta 2</option>
                     <option value="conta3">Conta 3</option>
                 </select>
             </div>
+            <div id="multiSelectContainer" style="display: none;margin-top:10px;">
+                <label for="multiSelect" class="form-label">Selecione as Etiquetas:</label>
+                <select id="multiSelect" class="form-select select2" multiple="multiple" style="width: 100%;">
+                    <!-- As opções serão preenchidas dinamicamente -->
+                </select>
+            </div>
+
         </div>
         <hr>
         <!-- Modais -->
@@ -77,15 +134,11 @@ if (!isset($_SESSION['user'])) {
                 </div>
             </div>
         </div>
-        <!-- Área para exibir mensagem e botão de download -->
-        <!-- <div id="responseMessageDownload" style="display: none;">
-            <p id="messageTextDownload"></p>
-            <a id="downloadButton" class="btn btn-success" style="display: none;" href="#" download>Baixar Arquivo</a>
-        </div> -->
 
         <!-- Área para exibir mensagem e botão de webhook -->
         <div id="responseMessageWebhook" style="display: none;">
             <a id="webhookButton" class="btn btn-success" style="display: none;" onclick="enviarParaWebhook()">Enviar Dados</a>
+            <a id="formatButton" class="btn btn-success" style="display: none;">Formatar</a>
         </div>
 
         <!-- Barra de Progresso -->
@@ -100,6 +153,69 @@ if (!isset($_SESSION['user'])) {
     </div>
 
     <script>
+        async function fetchAccountData(accountId) {
+            try {
+                const response = await fetch('etiquetas.php', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        accountId
+                    }),
+                });
+
+                if (!response.ok) {
+                    throw new Error('Erro ao buscar dados!');
+                }
+
+                const options = await response.json();
+                if (options.error) {
+                    console.error('Erro da API externa:', options.error);
+                    return;
+                }
+
+                renderSelectOptions(options);
+            } catch (error) {
+                console.error('Erro ao buscar dados:', error);
+            }
+        }
+
+        function renderSelectOptions(data) {
+            const $multiSelect = $('#multiSelect');
+            //const selectedIds = $(this).val();
+            $multiSelect.empty();
+
+            // Popular o Select2 com as opções da API
+            data.forEach(option => {
+                const newOption = new Option(option.name, option.id);
+                $multiSelect.append(newOption);
+            });
+
+            $multiSelect.trigger('change');
+        }
+
+        $(document).ready(function() {
+            // Inicializa o Select2
+            $('.select2').select2({
+                placeholder: "Digite o nome da Etiqueta",
+                allowClear: true,
+            });
+
+            // Exibe e preenche a lista de múltiplas escolhas com base na conta selecionada
+            $('#accountDropdown').on('change', function() {
+                const selectedAccount = $(this).val();
+                if (selectedAccount) {
+                    // Chama a função para buscar dados no servidor
+                    fetchAccountData(selectedAccount);
+                    $('#multiSelectContainer').show(); // Exibe o container da lista de múltiplas escolhas
+                } else {
+                    $('#multiSelectContainer').hide(); // Oculta caso nenhuma conta esteja selecionada
+                }
+            });
+        });
+
+
         $(document).ready(function() {
             // Sempre que houver uma mudança no campo de arquivo, exiba o botão de envio
             $('#csvFile').on('change', function() {
@@ -159,7 +275,8 @@ if (!isset($_SESSION['user'])) {
             });
         });
 
-        function showDropdown() {
+        function showDropdown(action) {
+
             $(document).ready(function() {
                 // Sempre que houver uma mudança no campo de arquivo, exiba o botão de envio
                 $('#csvFile').on('change', function() {
@@ -171,40 +288,52 @@ if (!isset($_SESSION['user'])) {
                 });
             });
 
+            // Verifica se action é botconversa
+            if (action === 'botconversa') {
+                $('.btn-info').addClass('disabled');
+                //$('.btn-info').text('Formatando dados para BotConversa...');
+                $('.btn-dark').hide();
+                $('.btn-warning').hide();
+                $('#formatButton').show();
+                $('#webhookButton').hide();
+            }
+
+            // Verifica se action é send-botconversa
+            if (action === 'send-botconversa') {
+                $('.btn-dark').addClass('disabled');
+                $('.btn-info').hide();
+                $('.btn-warning').hide();
+                $('#webhookButton').show();
+                $('#formatButton').hide();
+            }
+
             // Desabilita o botão sem ação ao carregá-lo
-            $('.btn-dark').addClass('disabled');
             $('#responseMessageFormat').show();
             $('#messageTextFormat').text('Preparando dados...');
             $('#messageTextFormat').show();
-            $('#webhookButton').show(); // Esconde botao de envio de webhook
-            formatCSV('send-botconversa');
+
+            // Exibe a mensagem e o botão para webhook
+            $('#responseMessageWebhook').show();
+            $('#messageTextFormat').text('Selecione a conta:');
+            $('#dropdown').toggle();
+
+            formatButton.addEventListener('click', function() {
+                formatCSV(action);
+            });
+
+            webhookButton.addEventListener('click', function() {
+                formatCSV(action);
+            });
         }
 
         // Função para formataCSV
         function formatCSV(type) {
+            var selectedOptions = $('#multiSelect').select2('data'); // Obter dados do Select2
+            var selectedNames = selectedOptions.map(option => option.text); // Extrair apenas os nomes
+
             var formData = new FormData();
             formData.append('action', type);
-
-            // Verifica se action é velip
-            if (formData.get('action') === 'velip') {
-                $('.btn-warning').text('Formatando dados para Velip...');
-                $('.btn-dark').hide();
-                $('.btn-info').hide();
-            }
-
-            // Verifica se action é botconversa
-            if (formData.get('action') === 'botconversa') {
-                $('.btn-info').text('Formatando dados para BotConversa...');
-                $('.btn-dark').hide();
-                $('.btn-warning').hide();
-            }
-
-            // Verifica se action é send-botconversa
-            if (formData.get('action') === 'send-botconversa') {
-                $('.btn-info').hide();
-                $('.btn-warning').hide();
-            }
-
+            formData.append('etiquetas', selectedNames); // Enviar os nomes como JSON
             formData.append('csvFile', $('#csvFile')[0].files[0]);
 
             $.ajax({
@@ -228,7 +357,7 @@ if (!isset($_SESSION['user'])) {
 
                             // Exibe a mensagem e o botão para webhook
                             $('#responseMessageWebhook').show();
-                            $('#messageTextFormat').text('Dados prontos! Selecione a conta:');
+                            $('#messageTextFormat').text('Selecione a conta:');
                             $('#dropdown').toggle();
                             $('#webhookButton').show(); // Exibe o botão de webhook
                         }
@@ -250,64 +379,6 @@ if (!isset($_SESSION['user'])) {
         }
 
         /// Função para enviar dados para webhook
-        // function enviarParaWebhook() {
-        //     // Exibe a barra de progresso
-        //     $('#progress-container').show();
-        //     $('#webhookButton').text('Enviando...');
-        //     $('#progress').css('width', '0%');
-        //     $('#progress').text('0%');
-
-        //     // Define o accountId selecionado
-        //     var accountId = $('#accountDropdown').val();
-
-        //     var progress = 0;
-        //     var interval = setInterval(function() {
-        //         if (progress < 85) {
-        //             progress += 1; // Aumenta a porcentagem em 1 a cada 500ms
-        //             $('#progress').css('width', progress + '%');
-        //             $('#progress').text(progress + '%');
-        //         }
-        //     }, 500); // Atualiza a cada 500ms
-
-        //     $.ajax({
-        //         url: 'webhook.php', // Envia para o webhook.php
-        //         type: 'POST',
-        //         data: {
-        //             accountId: accountId
-        //         },
-        //         beforeSend: function() {
-        //             // A barra começa com 0%
-        //             $('#progress').css('width', '0%');
-        //             $('#progress').text('0%');
-        //         },
-        //         success: function(response) {
-        //             var data = JSON.parse(response);
-        //             clearInterval(interval); // Para o incremento de progresso
-        //             $('#progress').css('width', '100%');
-        //             $('#progress').text('100%');
-
-        //             // Exibe o modal com a mensagem de sucesso
-        //             showModal('Sucesso', data.message);
-        //         },
-        //         error: function() {
-        //             clearInterval(interval); // Para o incremento de progresso
-        //             $('#progress').css('width', '100%');
-        //             $('#progress').text('Erro');
-
-        //             // Exibe o modal com a mensagem de erro
-        //             showModal('Erro', 'Ocorreu um erro ao enviar os dados para o webhook!');
-        //         },
-        //         complete: function() {
-        //             // Opcional: esconder a barra de progresso após a execução
-        //             setTimeout(function() {
-        //                 $('#progress-container').hide();
-        //                 $('#webhookButton').hide();
-        //                 $('#dropdown').hide();
-        //                 $('.btn-dark').hide();
-        //             }, 100); // Esconde após 100ms
-        //         }
-        //     });
-        // }
         function enviarParaWebhook() {
             // Exibe a barra de progresso
             $('#progress-container').show();
@@ -317,6 +388,8 @@ if (!isset($_SESSION['user'])) {
 
             // Define o accountId selecionado
             var accountId = $('#accountDropdown').val();
+            // Obter IDs selecionados no campo multiSelect
+            var selectedIds = $('#multiSelect').val() || [];
 
             var progress = 0;
             var interval;
@@ -330,10 +403,18 @@ if (!isset($_SESSION['user'])) {
                     progress += 1;
                     atualizarBarra(progress);
                     setTimeout(atualizarProgresso, 1000);
-                } else if (progress < 100) {
+                } else if (progress < 75) {
                     progress += 1;
                     atualizarBarra(progress);
                     setTimeout(atualizarProgresso, 5000);
+                } else if (progress < 85) {
+                    progress += 1;
+                    atualizarBarra(progress);
+                    setTimeout(atualizarProgresso, 10000);
+                } else if (progress < 100) {
+                    progress += 1;
+                    atualizarBarra(progress);
+                    setTimeout(atualizarProgresso, 20000);
                 } else {
                     clearTimeout(interval);
                 }
@@ -350,7 +431,8 @@ if (!isset($_SESSION['user'])) {
                 url: 'webhook.php',
                 type: 'POST',
                 data: {
-                    accountId: accountId
+                    accountId: accountId,
+                    selectedIds: selectedIds,
                 },
                 beforeSend: function() {
                     // A barra começa com 0%

@@ -2,80 +2,82 @@
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
+    // Configuração de diretórios
+    $uploadDir = 'data/input/';
+    $inputFile = $uploadDir . 'upload_input.csv';
+
     if (isset($_FILES['csvFile']) && !isset($_POST['action'])) {
+        // Upload do arquivo
+        $response = move_uploaded_file($_FILES['csvFile']['tmp_name'], $inputFile)
+            ? ['message' => 'Arquivo carregado com sucesso!']
+            : ['message' => 'Erro ao carregar o arquivo.'];
 
-        $uploadDir = 'data/input/';
-        $filePath = $uploadDir . 'upload_input.csv'; // Nome fixo para o arquivo
+        echo json_encode($response);
+        exit;
+    }
 
-        // Move o arquivo para o diretório de entrada
-        if (move_uploaded_file($_FILES['csvFile']['tmp_name'], $filePath)) {
-            echo json_encode(['message' => 'Arquivo carregado com sucesso!']);
-        } else {
-            echo json_encode(['message' => 'Erro ao carregar o arquivo.']);
-        }
-    } elseif (isset($_POST['action'])) {
+    if (isset($_POST['action'])) {
 
-        $action = $_POST['action'];
-
-        // Usa o caminho do arquivo carregado, não o arquivo fixo
-        $inputFile = 'data/input/upload_input.csv';
-
-        // Caminho do arquivo de saída
+        $action = $_POST['action'] ?? 'default';
+        $etiquetas = (string)$_POST['etiquetas'] ?? '';
+        $etiquetas = str_replace(',', ', ', $etiquetas);
         $outputFile = "data/output/output_{$action}.csv";
 
-        if (file_exists($inputFile)) {
-
-            // Verifica e ajusta a codificação do arquivo para UTF-8
-            $fileContent = file_get_contents($inputFile);
-            if (!mb_detect_encoding($fileContent, 'UTF-8', true)) {
-                $fileContent = mb_convert_encoding($fileContent, 'UTF-8');
-                file_put_contents($inputFile, $fileContent);
-            }
-
-            // Detectar delimitador
-            $delimiter = detectDelimiter($inputFile);
-
-            // Verificar se o BOM já existe, caso contrário, adicioná-lo
-            $bom = "\xEF\xBB\xBF"; // BOM UTF-8
-            $originalContent = file_get_contents($inputFile);
-
-            if (substr($originalContent, 0, 3) !== $bom) {
-                // Prepend BOM no início do conteúdo do arquivo
-                $originalContent = $bom . $originalContent;
-                file_put_contents($inputFile, $originalContent);
-            }
-
-            // Ler o arquivo CSV com o delimitador identificado
-            $rows = array_map(fn($line) => str_getcsv($line, $delimiter), file($inputFile));
-            $header = array_shift($rows); // Remove e obtém o cabeçalho
-            $data = array_map(fn($row) => array_combine($header, $row), $rows);
-
-            // Aplicar a formatação em todos os telefones
-            foreach ($data as &$item) {
-                $item['telefone'] = formatarTelefone($item['telefone']);
-            }
-
-            // Escreve os dados no arquivo de saída
-            $file = fopen($outputFile, 'w');
-
-            // Adicionar o cabeçalho ao arquivo CSV
-            fputcsv($file, $header);
-
-            // Guardar os dados no arquivo CSV
-            foreach ($data as $row) {
-                fputcsv($file, $row);
-            }
-
-            fclose($file);
-
-            // Retorna uma resposta JSON válida
-            echo json_encode([
-                'message' => "Arquivo processado para $action com sucesso!",
-                'file_url' => $outputFile // URL para download
-            ]);
-        } else {
-            echo json_encode(['message' => 'Arquivo de entrada não encontrado!']);
+        if (!file_exists($inputFile)) {
+            die(json_encode(['message' => 'Arquivo de entrada não encontrado!']));
         }
+
+        // Verificar e corrigir codificação UTF-8 e BOM
+        ensureUTF8WithBOM($inputFile);
+
+        // Detectar delimitador e ler o arquivo
+        $delimiter = detectDelimiter($inputFile);
+        $rows = array_map(fn($line) => str_getcsv($line, $delimiter), file($inputFile));
+
+        $header = array_map('trim', array_shift($rows)); // Limpa espaços do cabeçalho
+        $header = preg_replace('/^\xEF\xBB\xBF/', '', $header); // Remove BOM
+        $data = array_map(fn($row) => array_combine($header, $row), $rows);
+
+        // Formatar telefones
+        array_walk($data, fn(&$row) => $row['telefone'] = formatarTelefone($row['telefone']));
+
+        // Criar arquivo de saída
+        $file = fopen($outputFile, 'w');
+
+        if ($action === 'botconversa' || $action === 'send-botconversa') {
+            $newHeader = ['telefone', 'nome', 'etiquetas'];
+            fputcsv($file, $newHeader);
+            foreach ($data as $row) {
+                fputcsv($file, [
+                    'telefone' => $row['telefone'],
+                    'nome' => $row['nome'] ?? '',
+                    'etiquetas' => $etiquetas
+                ]);
+            }
+        } else {
+            $newHeader = ['NOME', 'DDI', 'DDD', 'NUMERO', 'PRIORIDADE', 'EXTRA1', 'EXTRA2', 'COD_CLI', 'DATA'];
+            fputcsv($file, $newHeader);
+            foreach ($data as $row) {
+                fputcsv($file, [
+                    'NOME' => $row['nome'] ?? '',
+                    'DDI' => '',
+                    'DDD' => '',
+                    'NUMERO' => $row['telefone'],
+                    'PRIORIDADE' => '',
+                    'EXTRA1' => '',
+                    'EXTRA2' => '',
+                    'COD_CLI' => '',
+                    'DATA' => ''
+                ]);
+            }
+        }
+
+        fclose($file);
+
+        echo json_encode([
+            'message' => "Arquivo processado para $action com sucesso!",
+            'file_url' => $outputFile
+        ]);
     }
 }
 
@@ -136,53 +138,25 @@ function formatarTelefone($telefone)
     return $telefone;
 }
 
-// Função para detectar delimitador do CSV
+// Função para detectar delimitador de CSV
 function detectDelimiter($filePath)
 {
-    $file = fopen($filePath, 'r');
-    $line = fgets($file);
-    fclose($file);
-
+    $line = fgets(fopen($filePath, 'r'));
     $delimiters = [',', ';', '\t', '|'];
-    $counts = [];
 
-    foreach ($delimiters as $delimiter) {
-        $counts[$delimiter] = substr_count($line, $delimiter);
-    }
-
-    return array_search(max($counts), $counts);
+    $counts = array_map(fn($delim) => substr_count($line, $delim), $delimiters);
+    return $delimiters[array_search(max($counts), $counts)];
 }
 
-function detectCSVDelimiter($filePath)
+// Função para garantir UTF-8 com BOM
+function ensureUTF8WithBOM($filePath)
 {
-    $file = fopen($filePath, 'r');
-
-    if (!$file) {
-        throw new Exception("Erro ao abrir o arquivo.");
+    $content = file_get_contents($filePath);
+    if (!mb_detect_encoding($content, 'UTF-8', true)) {
+        $content = mb_convert_encoding($content, 'UTF-8');
     }
-
-    // Delimitadores comuns
-    $delimiters = [",", ";", "\t", "|"];
-
-    $firstLine = fgets($file);
-    fclose($file);
-
-    if (!$firstLine) {
-        throw new Exception("O arquivo está vazio ou não pode ser lido.");
+    if (substr($content, 0, 3) !== "\xEF\xBB\xBF") {
+        $content = "\xEF\xBB\xBF" . $content;
     }
-
-    $maxCount = 0;
-    $detectedDelimiter = null;
-
-    // Testando cada delimitador
-    foreach ($delimiters as $delimiter) {
-        $count = count(explode($delimiter, $firstLine));
-
-        if ($count > $maxCount) {
-            $maxCount = $count;
-            $detectedDelimiter = $delimiter;
-        }
-    }
-
-    return $detectedDelimiter;
+    file_put_contents($filePath, $content);
 }
